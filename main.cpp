@@ -13,8 +13,9 @@
 
 class ImageProcessor {
 public:
-    ImageProcessor(std::string inputFileName, std::string outputFileName, int threadPriority)
-            : inputFileName_(std::move(inputFileName)), outputFileName_(std::move(outputFileName)), threadPriority_(threadPriority) {}
+    ImageProcessor(std::string inputFileName, std::string outputFileName, int threadPriority, int threadNumber)
+            : inputFileName_(std::move(inputFileName)), outputFileName_(std::move(outputFileName)),
+            threadPriority_(threadPriority), threadNumber_(threadNumber) {}
 
     // Function to convert a segment of the image to grayscale
     static void ConvertToGrayscale(std::vector<unsigned char>& pixelData, size_t start, size_t end) {
@@ -36,10 +37,10 @@ public:
 #ifdef _WIN32
         int priority = THREAD_PRIORITY_NORMAL;
         if (threadPriority_ == 1) {
-            priority = THREAD_PRIORITY_ABOVE_NORMAL;
+            priority = HIGH_PRIORITY_CLASS ;
         }
         else if (threadPriority_ == -1) {
-            priority = THREAD_PRIORITY_BELOW_NORMAL;
+            priority = THREAD_PRIORITY_LOWEST;
         }
 
         ::SetThreadPriority(reinterpret_cast<HANDLE>(thread.native_handle()), priority);
@@ -84,7 +85,7 @@ public:
 
         imageFile.close();
 
-        const size_t numThreads = 2;
+        const size_t numThreads = threadNumber_;
         std::vector<std::thread> threads;
 
         // Divide the image into segments for parallel processing
@@ -129,14 +130,28 @@ private:
     std::string inputFileName_;
     std::string outputFileName_;
     int threadPriority_;
+    int threadNumber_;
     std::vector<unsigned char> pixelData_;
 };
 
 int main() {
-    // Example: Set threadPriority to 1 for higher priority, -1 for lower priority, 0 for normal priority.
-    ImageProcessor imageProcessor("../Gojo.ppm", "../output_bw.ppm", 1);
+    int numThreads, priority;
+    std::cout << "Enter num of threads: ";
+    std::cin >> numThreads;
+
+    std::cout << "Enter priority level: ";
+    std::cin >> priority;
+
+    //Set threadPriority to 1 for higher priority, -1 for lower priority, 0 for normal priority.
+    ImageProcessor imageProcessor("../DarkSouls.ppm", "../output_bw.ppm", priority, numThreads);
+
+    auto start = std::chrono::high_resolution_clock::now();
 
     imageProcessor.ProcessImage();
 
+    auto stop = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
+
+    std::cout << "Execution time: " << duration.count() << " microseconds" << std::endl;
     return 0;
 }
