@@ -13,6 +13,8 @@
 
 class ImageProcessor {
 public:
+
+
     ImageProcessor(std::string inputFileName, std::string outputFileName, int threadPriority, int threadNumber)
             : inputFileName_(std::move(inputFileName)), outputFileName_(std::move(outputFileName)),
             threadPriority_(threadPriority), threadNumber_(threadNumber) {}
@@ -61,23 +63,12 @@ public:
     }
 
     void ProcessImage() {
-        std::ifstream imageFile(inputFileName_, std::ios::binary);
-
-        if (!imageFile.is_open()) {
-            std::cerr << "Can't open the input image file!" << std::endl;
-            return;
-        }
-
-        std::string format;
         int width, height, maxColorValue;
 
-        // Read the header of the binary PPM file
-        imageFile >> format >> width >> height >> maxColorValue;
+        std::string format;
 
-        if (format != "P6") {
-            std::cerr << "Bad format" << std::endl;
-            return;
-        }
+        std::ifstream imageFile = image_info(width, height, maxColorValue, format);
+
 
         pixelData_.resize(width * height * 3);
 
@@ -91,6 +82,9 @@ public:
         // Divide the image into segments for parallel processing
         const size_t segmentSize = pixelData_.size() / numThreads;
         size_t start = 0;
+
+        auto start_time = std::chrono::high_resolution_clock::now();
+
 
         for (size_t i = 0; i < numThreads - 1; ++i) {
             size_t end = start + segmentSize;
@@ -109,6 +103,12 @@ public:
             thread.join();
         }
 
+        auto stop_time = std::chrono::high_resolution_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop_time - start_time);
+
+        //Work time
+        std::cout << "Execution time: " << duration.count() << " microseconds" << std::endl;
+
         // Write the processed image to the output file
         std::ofstream outputFile(outputFileName_, std::ios::binary);
 
@@ -126,7 +126,29 @@ public:
         outputFile.close();
     }
 
+    ~ImageProcessor(){
+        pixelData_.clear();
+    }
+
 private:
+
+    std::ifstream image_info(int& width,int& height, int& maxColorValue, std::string& format){
+        std::ifstream imageFile(inputFileName_, std::ios::binary);
+
+        if (!imageFile.is_open()) {
+            std::cerr << "Can't open the input image file!" << std::endl;
+        }
+
+        // Read the header of the binary PPM file
+        imageFile >> format >> width >> height >> maxColorValue;
+
+        if (format != "P6") {
+            std::cerr << "Bad format" << std::endl;
+        }
+
+        return imageFile;
+    }
+
     std::string inputFileName_;
     std::string outputFileName_;
     int threadPriority_;
@@ -135,6 +157,7 @@ private:
 };
 
 int main() {
+
     int numThreads, priority;
     std::cout << "Enter num of threads: ";
     std::cin >> numThreads;
@@ -143,15 +166,9 @@ int main() {
     std::cin >> priority;
 
     //Set threadPriority to 1 for higher priority, -1 for lower priority, 0 for normal priority.
-    ImageProcessor imageProcessor("../DarkSouls.ppm", "../output_bw.ppm", priority, numThreads);
-
-    auto start = std::chrono::high_resolution_clock::now();
+    ImageProcessor imageProcessor("../test_big_picture.ppm", "../output_bw.ppm", priority, numThreads);
 
     imageProcessor.ProcessImage();
 
-    auto stop = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
-
-    std::cout << "Execution time: " << duration.count() << " microseconds" << std::endl;
     return 0;
 }
