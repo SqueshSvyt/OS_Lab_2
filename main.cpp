@@ -4,6 +4,8 @@
 #include <string>
 #include <thread>
 #include <chrono>
+//#include <mutex>
+#include <semaphore.h>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -15,12 +17,18 @@ class ImageProcessor {
 public:
 
 
-    ImageProcessor(std::string inputFileName, std::string outputFileName, int threadPriority, int threadNumber)
+    ImageProcessor(std::string inputFileName, std::string outputFileName, int threadPriority, int threadNumber,
+                   int max_work_thread)
             : inputFileName_(std::move(inputFileName)), outputFileName_(std::move(outputFileName)),
-            threadPriority_(threadPriority), threadNumber_(threadNumber) {}
+            threadPriority_(threadPriority), threadNumber_(threadNumber), max_work_thread_(max_work_thread) {
+
+        //init sync construction
+        sem_init(&semaphore, 0, max_work_thread_);
+    }
 
     // Function to convert a segment of the image to grayscale
     static void ConvertToGrayscale(std::vector<unsigned char>& pixelData, size_t start, size_t end) {
+        sem_wait(&semaphore);
         for (size_t i = start; i < end; i += 3) {
             unsigned char red = pixelData[i];
             unsigned char green = pixelData[i + 1];
@@ -32,11 +40,14 @@ public:
             pixelData[i + 1] = grayscale;
             pixelData[i + 2] = grayscale;
         }
+        sem_post(&semaphore);
     }
 
     // Set thread priority (platform-specific)
     void SetThreadPriority(std::thread& thread) const {
+
 #ifdef _WIN32
+
         int priority = THREAD_PRIORITY_NORMAL;
         if (threadPriority_ == 1) {
             priority = HIGH_PRIORITY_CLASS ;
@@ -46,6 +57,7 @@ public:
         }
 
         ::SetThreadPriority(reinterpret_cast<HANDLE>(thread.native_handle()), priority);
+
 #else
         int policy = SCHED_OTHER;
         struct sched_param params;
@@ -60,6 +72,7 @@ public:
 
         pthread_setschedparam(thread.native_handle(), policy, &params);
 #endif
+
     }
 
     void ProcessImage() {
@@ -82,16 +95,21 @@ public:
         // Divide the image into segments for parallel processing
         const size_t segmentSize = pixelData_.size() / numThreads;
         size_t start = 0;
+        //size_t end = pixelData_.size();
 
         auto start_time = std::chrono::high_resolution_clock::now();
 
 
         for (size_t i = 0; i < numThreads - 1; ++i) {
             size_t end = start + segmentSize;
+
+
             threads.emplace_back(ConvertToGrayscale, std::ref(pixelData_), start, end);
 
             // Set thread priority
             SetThreadPriority(threads.back());
+
+            //Replace work zone for thread
             start = end;
         }
 
@@ -127,9 +145,11 @@ public:
     }
 
     ~ImageProcessor(){
+        sem_destroy(&semaphore);
         pixelData_.clear();
     }
 
+    static sem_t semaphore;
 private:
 
     std::ifstream image_info(int& width,int& height, int& maxColorValue, std::string& format){
@@ -153,20 +173,29 @@ private:
     std::string outputFileName_;
     int threadPriority_;
     int threadNumber_;
+    int max_work_thread_;
     std::vector<unsigned char> pixelData_;
 };
 
+sem_t ImageProcessor::semaphore;
+
 int main() {
 
-    int numThreads, priority;
+    int numThreads, priority, max_work_thread;
     std::cout << "Enter num of threads: ";
     std::cin >> numThreads;
+    std::cout << std::endl;
+
+    std::cout << "Enter work thread: ";
+    std::cin >> max_work_thread;
+    std::cout << std::endl;
 
     std::cout << "Enter priority level: ";
     std::cin >> priority;
+    std::cout << std::endl;
 
     //Set threadPriority to 1 for higher priority, -1 for lower priority, 0 for normal priority.
-    ImageProcessor imageProcessor("../test_big_picture.ppm", "../output_bw.ppm", priority, numThreads);
+    ImageProcessor imageProcessor("../test_big_picture.ppm", "../output_bw.ppm", priority, numThreads, max_work_thread);
 
     imageProcessor.ProcessImage();
 
